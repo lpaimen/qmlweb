@@ -88,7 +88,7 @@ var jsp = require("./parse-js"),
 
 function ast_walker(ast) {
         function _vardefs(defs) {
-                return [ this[0], MAP(defs, function(def){
+                return [ this[0], MAP(defs, def => {
                         var a = [ def[0] ];
                         if (def.length > 1)
                                 a[1] = walk(def[1]);
@@ -133,10 +133,8 @@ function ast_walker(ast) {
                         return [ this[0], walk(ctor), MAP(args, walk) ];
                 },
                 "switch": function(expr, body) {
-                        return [ this[0], walk(expr), MAP(body, function(branch){
-                                return [ branch[0] ? walk(branch[0]) : null,
-                                         MAP(branch[1], walk) ];
-                        }) ];
+                        return [ this[0], walk(expr), MAP(body, branch => [ branch[0] ? walk(branch[0]) : null,
+                                 MAP(branch[1], walk) ]) ];
                 },
                 "break": function(label) {
                         return [ this[0], label ];
@@ -193,11 +191,8 @@ function ast_walker(ast) {
                         return [ this[0], walk(expr), walk(subscript) ];
                 },
                 "object": function(props) {
-                        return [ this[0], MAP(props, function(p){
-                                return p.length == 2
-                                        ? [ p[0], walk(p[1]) ]
-                                        : [ p[0], walk(p[1]), p[2] ]; // get/set-ter
-                        }) ];
+                        return [ this[0], MAP(props, p => // get/set-ter
+                        (p.length == 2 ? [ p[0], walk(p[1]) ] : [ p[0], walk(p[1]), p[2] ])) ];
                 },
                 "regexp": function(rx, mods) {
                         return [ this[0], rx, mods ];
@@ -208,8 +203,8 @@ function ast_walker(ast) {
                 "stat": function(stat) {
                         return [ this[0], walk(stat) ];
                 },
-                "seq": function() {
-                        return [ this[0] ].concat(MAP(slice(arguments), walk));
+                "seq": function(...args) {
+                        return [ this[0] ].concat(MAP(slice(args), walk));
                 },
                 "label": function(name, block) {
                         return [ this[0], name, walk(block) ];
@@ -244,7 +239,8 @@ function ast_walker(ast) {
         };
 
         function with_walkers(walkers, cont){
-                var save = {}, i;
+                var save = {};
+                var i;
                 for (i in walkers) if (HOP(walkers, i)) {
                         save[i] = user[i];
                         user[i] = walkers[i];
@@ -258,12 +254,12 @@ function ast_walker(ast) {
         };
 
         return {
-                walk: walk,
-                with_walkers: with_walkers,
-                parent: function() {
+                walk,
+                with_walkers,
+                parent() {
                         return stack[stack.length - 2]; // last one is current node
                 },
-                stack: function() {
+                stack() {
                         return stack;
                 }
         };
@@ -289,9 +285,9 @@ function Scope(parent) {
         }
 };
 
-var base54 = (function(){
+var base54 = ((() => {
         var DIGITS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ$_";
-        return function(num) {
+        return num => {
                 var ret = "";
                 do {
                         ret = DIGITS.charAt(num % 54) + ret;
@@ -299,20 +295,20 @@ var base54 = (function(){
                 } while (num > 0);
                 return ret;
         };
-})();
+}))();
 
 Scope.prototype = {
-        has: function(name) {
+        has(name) {
                 for (var s = this; s; s = s.parent)
                         if (HOP(s.names, name))
                                 return s;
         },
-        has_mangled: function(mname) {
+        has_mangled(mname) {
                 for (var s = this; s; s = s.parent)
                         if (HOP(s.rev_mangled, mname))
                                 return s;
         },
-        toJSON: function() {
+        toJSON() {
                 return {
                         names: this.names,
                         uses_eval: this.uses_eval,
@@ -320,7 +316,7 @@ Scope.prototype = {
                 };
         },
 
-        next_mangled: function() {
+        next_mangled() {
                 // we must be careful that the new mangled name:
                 //
                 // 1. doesn't shadow a mangled name from a parent
@@ -336,7 +332,8 @@ Scope.prototype = {
                 // 3. doesn't shadow a name that is referenced but not
                 //    defined (possibly global defined elsewhere).
                 for (;;) {
-                        var m = base54(++this.cname), prior;
+                        var m = base54(++this.cname);
+                        var prior;
 
                         // case 1.
                         prior = this.has_mangled(m);
@@ -359,11 +356,11 @@ Scope.prototype = {
                         return m;
                 }
         },
-        set_mangle: function(name, m) {
+        set_mangle(name, m) {
                 this.rev_mangled[m] = name;
                 return this.mangled[name] = m;
         },
-        get_mangled: function(name, newMangle) {
+        get_mangled(name, newMangle) {
                 if (this.uses_eval || this.uses_with) return name; // no mangle if eval or with is in use
                 var s = this.has(name);
                 if (!s) return name; // not in visible scope, no mangle
@@ -371,10 +368,10 @@ Scope.prototype = {
                 if (!newMangle) return name;                      // not found and no mangling requested
                 return s.set_mangle(name, s.next_mangled());
         },
-        references: function(name) {
+        references(name) {
                 return name && !this.parent || this.uses_with || this.uses_eval || this.refs[name];
         },
-        define: function(name, type) {
+        define(name, type) {
                 if (name != null) {
                         if (type == "var" || !HOP(this.names, name))
                                 this.names[name] = type || "var";
@@ -384,9 +381,9 @@ Scope.prototype = {
 };
 
 function ast_add_scope(ast) {
-
         var current_scope = null;
-        var w = ast_walker(), walk = w.walk;
+        var w = ast_walker();
+        var walk = w.walk;
         var having_eval = [];
 
         function with_new_scope(cont) {
@@ -395,35 +392,35 @@ function ast_add_scope(ast) {
                 ret.scope = current_scope;
                 current_scope = current_scope.parent;
                 return ret;
-        };
+        }
 
         function define(name, type) {
                 return current_scope.define(name, type);
-        };
+        }
 
         function reference(name) {
                 current_scope.refs[name] = true;
-        };
+        }
 
         function _lambda(name, args, body) {
                 var is_defun = this[0] == "defun";
-                return [ this[0], is_defun ? define(name, "defun") : name, args, with_new_scope(function(){
+                return [ this[0], is_defun ? define(name, "defun") : name, args, with_new_scope(() => {
                         if (!is_defun) define(name, "lambda");
-                        MAP(args, function(name){ define(name, "arg") });
+                        MAP(args, name => { define(name, "arg") });
                         return MAP(body, walk);
                 })];
-        };
+        }
 
         function _vardefs(type) {
-                return function(defs) {
-                        MAP(defs, function(d){
+                return defs => {
+                        MAP(defs, d => {
                                 define(d[0], type);
                                 if (d[1]) reference(d[0]);
                         });
                 };
-        };
+        }
 
-        return with_new_scope(function(){
+        return with_new_scope(() => {
                 // process AST
                 var ret = w.with_walkers({
                         "function": _lambda,
@@ -450,9 +447,7 @@ function ast_add_scope(ast) {
                                         having_eval.push(current_scope);
                                 reference(name);
                         }
-                }, function(){
-                        return walk(ast);
-                });
+                }, () => walk(ast));
 
                 // the reason why we need an additional pass here is
                 // that names can be used prior to their definition.
@@ -460,7 +455,7 @@ function ast_add_scope(ast) {
                 // scopes where eval was detected and their parents
                 // are marked with uses_eval, unless they define the
                 // "eval" name.
-                MAP(having_eval, function(scope){
+                MAP(having_eval, scope => {
                         if (!scope.has("eval")) while (scope) {
                                 scope.uses_eval = true;
                                 scope = scope.parent;
@@ -486,13 +481,14 @@ function ast_add_scope(ast) {
 
                 return ret;
         });
-
 };
 
 /* -----[ mangle names ]----- */
 
 function ast_mangle(ast, options) {
-        var w = ast_walker(), walk = w.walk, scope;
+        var w = ast_walker();
+        var walk = w.walk;
+        var scope;
         options = options || {};
 
         function get_mangled(name, newMangle) {
@@ -500,7 +496,7 @@ function ast_mangle(ast, options) {
                 if (options.except && member(name, options.except))
                         return name;
                 return scope.get_mangled(name, newMangle);
-        };
+        }
 
         function get_define(name) {
                 if (options.defines) {
@@ -513,10 +509,11 @@ function ast_mangle(ast, options) {
                         }
                         return null;
                 }
-        };
+        }
 
         function _lambda(name, args, body) {
-                var is_defun = this[0] == "defun", extra;
+                var is_defun = this[0] == "defun";
+                var extra;
                 if (name) {
                         if (is_defun) name = get_mangled(name);
                         else {
@@ -527,12 +524,12 @@ function ast_mangle(ast, options) {
                                         extra[name] = name;
                         }
                 }
-                body = with_scope(body.scope, function(){
-                        args = MAP(args, function(name){ return get_mangled(name) });
+                body = with_scope(body.scope, () => {
+                        args = MAP(args, name => get_mangled(name));
                         return MAP(body, walk);
                 }, extra);
                 return [ this[0], name, args, body ];
-        };
+        }
 
         function with_scope(s, cont, extra) {
                 var _scope = scope;
@@ -547,20 +544,18 @@ function ast_mangle(ast, options) {
                 ret.scope = s;
                 scope = _scope;
                 return ret;
-        };
+        }
 
         function _vardefs(defs) {
-                return [ this[0], MAP(defs, function(d){
-                        return [ get_mangled(d[0]), walk(d[1]) ];
-                }) ];
-        };
+                return [ this[0], MAP(defs, d => [ get_mangled(d[0]), walk(d[1]) ]) ];
+        }
 
         return w.with_walkers({
                 "function": _lambda,
-                "defun": function() {
+                "defun": function(...args) {
                         // move function declarations to the top when
                         // they are not in some block.
-                        var ast = _lambda.apply(this, arguments);
+                        var ast = _lambda.apply(this, args);
                         switch (w.parent()[0]) {
                             case "toplevel":
                             case "function":
@@ -585,13 +580,9 @@ function ast_mangle(ast, options) {
                 },
                 "toplevel": function(body) {
                         var self = this;
-                        return with_scope(self.scope, function(){
-                                return [ self[0], MAP(body, walk) ];
-                        });
+                        return with_scope(self.scope, () => [ self[0], MAP(body, walk) ]);
                 }
-        }, function() {
-                return walk(ast_add_scope(ast));
-        });
+        }, () => walk(ast_add_scope(ast)));
 };
 
 /* -----[
@@ -605,7 +596,7 @@ function ast_mangle(ast, options) {
      - if (foo) return bar(); else something();  ==> {if(foo)return bar();something()}
    ]----- */
 
-var warn = function(){};
+var warn = () => {};
 
 function best_of(ast1, ast2) {
         return gen_code(ast1).length > gen_code(ast2[0] == "stat" ? ast2[1] : ast2).length ? ast2 : ast1;
@@ -653,7 +644,7 @@ function boolean_expr(expr) {
 };
 
 function make_conditional(c, t, e) {
-    var make_real_conditional = function() {
+    var make_real_conditional = () => {
         if (c[0] == "unary-prefix" && c[1] == "!") {
             return e ? [ "conditional", c[2], e, t ] : [ "binary", "||", c[2], t ];
         } else {
@@ -661,7 +652,7 @@ function make_conditional(c, t, e) {
         }
     };
     // shortcut the conditional if the expression has a constant value
-    return when_constant(c, function(ast, val){
+    return when_constant(c, (ast, val) => {
         warn_unreachable(val ? e : t);
         return          (val ? t : e);
     }, make_real_conditional);
@@ -678,7 +669,7 @@ function is_string(node) {
                 (is_string(node[2]) || is_string(node[3])));
 };
 
-var when_constant = (function(){
+var when_constant = ((() => {
 
         var $NOT_CONSTANT = {};
 
@@ -706,38 +697,40 @@ var when_constant = (function(){
                         }
                         break;
                     case "binary":
-                        var left = expr[2], right = expr[3];
-                        switch (expr[1]) {
-                            case "&&"         : return evaluate(left) &&         evaluate(right);
-                            case "||"         : return evaluate(left) ||         evaluate(right);
-                            case "|"          : return evaluate(left) |          evaluate(right);
-                            case "&"          : return evaluate(left) &          evaluate(right);
-                            case "^"          : return evaluate(left) ^          evaluate(right);
-                            case "+"          : return evaluate(left) +          evaluate(right);
-                            case "*"          : return evaluate(left) *          evaluate(right);
-                            case "/"          : return evaluate(left) /          evaluate(right);
-                            case "-"          : return evaluate(left) -          evaluate(right);
-                            case "<<"         : return evaluate(left) <<         evaluate(right);
-                            case ">>"         : return evaluate(left) >>         evaluate(right);
-                            case ">>>"        : return evaluate(left) >>>        evaluate(right);
-                            case "=="         : return evaluate(left) ==         evaluate(right);
-                            case "==="        : return evaluate(left) ===        evaluate(right);
-                            case "!="         : return evaluate(left) !=         evaluate(right);
-                            case "!=="        : return evaluate(left) !==        evaluate(right);
-                            case "<"          : return evaluate(left) <          evaluate(right);
-                            case "<="         : return evaluate(left) <=         evaluate(right);
-                            case ">"          : return evaluate(left) >          evaluate(right);
-                            case ">="         : return evaluate(left) >=         evaluate(right);
-                            case "in"         : return evaluate(left) in         evaluate(right);
-                            case "instanceof" : return evaluate(left) instanceof evaluate(right);
-                        }
+                            var left = expr[2];
+                            var right = expr[3];
+                            switch (expr[1]) {
+                                case "&&"         : return evaluate(left) &&         evaluate(right);
+                                case "||"         : return evaluate(left) ||         evaluate(right);
+                                case "|"          : return evaluate(left) |          evaluate(right);
+                                case "&"          : return evaluate(left) &          evaluate(right);
+                                case "^"          : return evaluate(left) ^          evaluate(right);
+                                case "+"          : return evaluate(left) +          evaluate(right);
+                                case "*"          : return evaluate(left) *          evaluate(right);
+                                case "/"          : return evaluate(left) /          evaluate(right);
+                                case "-"          : return evaluate(left) -          evaluate(right);
+                                case "<<"         : return evaluate(left) <<         evaluate(right);
+                                case ">>"         : return evaluate(left) >>         evaluate(right);
+                                case ">>>"        : return evaluate(left) >>>        evaluate(right);
+                                case "=="         : return evaluate(left) ==         evaluate(right);
+                                case "==="        : return evaluate(left) ===        evaluate(right);
+                                case "!="         : return evaluate(left) !=         evaluate(right);
+                                case "!=="        : return evaluate(left) !==        evaluate(right);
+                                case "<"          : return evaluate(left) <          evaluate(right);
+                                case "<="         : return evaluate(left) <=         evaluate(right);
+                                case ">"          : return evaluate(left) >          evaluate(right);
+                                case ">="         : return evaluate(left) >=         evaluate(right);
+                                case "in"         : return evaluate(left) in         evaluate(right);
+                                case "instanceof" : return evaluate(left) instanceof evaluate(right);
+                            }
                 }
                 throw $NOT_CONSTANT;
         };
 
-        return function(expr, yes, no) {
+        return (expr, yes, no) => {
                 try {
-                        var val = evaluate(expr), ast;
+                        var val = evaluate(expr);
+                        var ast;
                         switch (typeof val) {
                             case "string": ast =  [ "string", val ]; break;
                             case "number": ast =  [ "num", val ]; break;
@@ -771,7 +764,7 @@ var when_constant = (function(){
                 }
         };
 
-})();
+}))();
 
 function warn_unreachable(ast) {
         if (!empty(ast))
@@ -779,7 +772,8 @@ function warn_unreachable(ast) {
 };
 
 function prepare_ifs(ast) {
-        var w = ast_walker(), walk = w.walk;
+        var w = ast_walker();
+        var walk = w.walk;
         // In this first pass, we rewrite ifs which abort with no else with an
         // if-else.  For example:
         //
@@ -825,16 +819,16 @@ function prepare_ifs(ast) {
                 }
 
                 return statements;
-        };
+        }
 
         function redo_if_lambda(name, args, body) {
                 body = redo_if(body);
                 return [ this[0], name, args, body ];
-        };
+        }
 
         function redo_if_block(statements) {
                 return [ this[0], statements != null ? redo_if(statements) : null ];
-        };
+        }
 
         return w.with_walkers({
                 "defun": redo_if_lambda,
@@ -852,21 +846,21 @@ function prepare_ifs(ast) {
                                 f != null ? redo_if(f) : null
                         ];
                 }
-        }, function() {
-                return walk(ast);
-        });
+        }, () => walk(ast));
 };
 
 function for_side_effects(ast, handler) {
-        var w = ast_walker(), walk = w.walk;
-        var $stop = {}, $restart = {};
-        function stop() { throw $stop };
-        function restart() { throw $restart };
-        function found(){ return handler.call(this, this, w, stop, restart) };
+        var w = ast_walker();
+        var walk = w.walk;
+        var $stop = {};
+        var $restart = {};
+        function stop() { throw $stop }
+        function restart() { throw $restart }
+        function found(){ return handler.call(this, this, w, stop, restart) }
         function unary(op) {
                 if (op == "++" || op == "--")
                         return found.apply(this, arguments);
-        };
+        }
         return w.with_walkers({
                 "try": found,
                 "throw": found,
@@ -886,7 +880,7 @@ function for_side_effects(ast, handler) {
                 "unary-prefix": unary,
                 "unary-postfix": unary,
                 "defun": found
-        }, function(){
+        }, () => {
                 while (true) try {
                         walk(ast);
                         break;
@@ -899,22 +893,27 @@ function for_side_effects(ast, handler) {
 };
 
 function ast_lift_variables(ast) {
-        var w = ast_walker(), walk = w.walk, scope;
+        var w = ast_walker();
+        var walk = w.walk;
+        var scope;
         function do_body(body, env) {
                 var _scope = scope;
                 scope = env;
                 body = MAP(body, walk);
-                var hash = {}, names = MAP(env.names, function(type, name){
+                var hash = {};
+
+                var names = MAP(env.names, (type, name) => {
                         if (type != "var") return MAP.skip;
                         if (!env.references(name)) return MAP.skip;
                         hash[name] = true;
                         return [ name ];
                 });
+
                 if (names.length > 0) {
                         // looking for assignments to any of these variables.
                         // we can save considerable space by moving the definitions
                         // in the var declaration.
-                        for_side_effects([ "block", body ], function(ast, walker, stop, restart) {
+                        for_side_effects([ "block", body ], (ast, walker, stop, restart) => {
                                 if (ast[0] == "assign"
                                     && ast[1] === true
                                     && ast[2][0] == "name"
@@ -934,7 +933,7 @@ function ast_lift_variables(ast) {
                                         if (p[0] == "seq") {
                                                 var a = p[2];
                                                 a.unshift(0, p.length);
-                                                p.splice.apply(p, a);
+                                                p.splice(...a);
                                         }
                                         else if (p[0] == "stat") {
                                                 p.splice(0, p.length, "block"); // empty statement
@@ -950,7 +949,7 @@ function ast_lift_variables(ast) {
                 }
                 scope = _scope;
                 return body;
-        };
+        }
         function _vardefs(defs) {
                 var ret = null;
                 for (var i = defs.length; --i >= 0;) {
@@ -966,10 +965,10 @@ function ast_lift_variables(ast) {
                         return MAP.skip;
                 }
                 return [ "stat", ret ];
-        };
+        }
         function _toplevel(body) {
                 return [ this[0], do_body(body, this.scope) ];
-        };
+        }
         return w.with_walkers({
                 "function": function(name, args, body){
                         for (var i = args.length; --i >= 0 && !body.scope.references(args[i]);)
@@ -985,9 +984,7 @@ function ast_lift_variables(ast) {
                 },
                 "var": _vardefs,
                 "toplevel": _toplevel
-        }, function(){
-                return walk(ast_add_scope(ast));
-        });
+        }, () => walk(ast_add_scope(ast)));
 };
 
 function ast_squeeze(ast, options) {
@@ -998,7 +995,9 @@ function ast_squeeze(ast, options) {
                 no_warnings : false
         });
 
-        var w = ast_walker(), walk = w.walk, scope;
+        var w = ast_walker();
+        var walk = w.walk;
+        var scope;
 
         function negate(c) {
                 var not_c = [ "unary-prefix", "!", c ];
@@ -1012,25 +1011,27 @@ function ast_squeeze(ast, options) {
                     case "conditional":
                         return best_of(not_c, [ "conditional", c[1], negate(c[2]), negate(c[3]) ]);
                     case "binary":
-                        var op = c[1], left = c[2], right = c[3];
-                        if (!options.keep_comps) switch (op) {
-                            case "<="  : return [ "binary", ">", left, right ];
-                            case "<"   : return [ "binary", ">=", left, right ];
-                            case ">="  : return [ "binary", "<", left, right ];
-                            case ">"   : return [ "binary", "<=", left, right ];
-                        }
-                        switch (op) {
-                            case "=="  : return [ "binary", "!=", left, right ];
-                            case "!="  : return [ "binary", "==", left, right ];
-                            case "===" : return [ "binary", "!==", left, right ];
-                            case "!==" : return [ "binary", "===", left, right ];
-                            case "&&"  : return best_of(not_c, [ "binary", "||", negate(left), negate(right) ]);
-                            case "||"  : return best_of(not_c, [ "binary", "&&", negate(left), negate(right) ]);
-                        }
-                        break;
+                            var op = c[1];
+                            var left = c[2];
+                            var right = c[3];
+                            if (!options.keep_comps) switch (op) {
+                                case "<="  : return [ "binary", ">", left, right ];
+                                case "<"   : return [ "binary", ">=", left, right ];
+                                case ">="  : return [ "binary", "<", left, right ];
+                                case ">"   : return [ "binary", "<=", left, right ];
+                            }
+                            switch (op) {
+                                case "=="  : return [ "binary", "!=", left, right ];
+                                case "!="  : return [ "binary", "==", left, right ];
+                                case "===" : return [ "binary", "!==", left, right ];
+                                case "!==" : return [ "binary", "===", left, right ];
+                                case "&&"  : return best_of(not_c, [ "binary", "||", negate(left), negate(right) ]);
+                                case "||"  : return best_of(not_c, [ "binary", "&&", negate(left), negate(right) ]);
+                            }
+                            break;
                 }
                 return not_c;
-        };
+        }
 
         function with_scope(s, cont) {
                 var _scope = scope;
@@ -1039,7 +1040,7 @@ function ast_squeeze(ast, options) {
                 ret.scope = s;
                 scope = _scope;
                 return ret;
-        };
+        }
 
         function rmblock(block) {
                 if (block != null && block[0] == "block" && block[1]) {
@@ -1049,18 +1050,18 @@ function ast_squeeze(ast, options) {
                                 block = [ "block" ];
                 }
                 return block;
-        };
+        }
 
         function _lambda(name, args, body) {
                 var is_defun = this[0] == "defun";
-                body = with_scope(body.scope, function(){
+                body = with_scope(body.scope, () => {
                         var ret = tighten(body, "lambda");
                         if (!is_defun && name && !scope.references(name))
                                 name = null;
                         return ret;
                 });
                 return [ this[0], name, args, body ];
-        };
+        }
 
         // this function does a few things:
         // 1. discard useless blocks
@@ -1071,10 +1072,10 @@ function ast_squeeze(ast, options) {
         function tighten(statements, block_type) {
                 statements = MAP(statements, walk);
 
-                statements = statements.reduce(function(a, stat){
+                statements = statements.reduce((a, stat) => {
                         if (stat[0] == "block") {
                                 if (stat[1]) {
-                                        a.push.apply(a, stat[1]);
+                                        a.push(...stat[1]);
                                 }
                         } else {
                                 a.push(stat);
@@ -1082,8 +1083,8 @@ function ast_squeeze(ast, options) {
                         return a;
                 }, []);
 
-                statements = (function(a, prev){
-                        statements.forEach(function(cur){
+                statements = (((a, prev) => {
+                        statements.forEach(cur => {
                                 if (prev && ((cur[0] == "var" && prev[0] == "var") ||
                                              (cur[0] == "const" && prev[0] == "const"))) {
                                         prev[1] = prev[1].concat(cur[1]);
@@ -1093,10 +1094,10 @@ function ast_squeeze(ast, options) {
                                 }
                         });
                         return a;
-                })([]);
+                }))([]);
 
-                if (options.dead_code) statements = (function(a, has_quit){
-                        statements.forEach(function(st){
+                if (options.dead_code) statements = (((a, has_quit) => {
+                        statements.forEach(st => {
                                 if (has_quit) {
                                         if (st[0] == "function" || st[0] == "defun") {
                                                 a.push(st);
@@ -1104,7 +1105,7 @@ function ast_squeeze(ast, options) {
                                         else if (st[0] == "var" || st[0] == "const") {
                                                 if (!options.no_warnings)
                                                         warn("Variables declared in unreachable code");
-                                                st[1] = MAP(st[1], function(def){
+                                                st[1] = MAP(st[1], def => {
                                                         if (def[1] && !options.no_warnings)
                                                                 warn_unreachable([ "assign", true, [ "name", def[0] ], def[1] ]);
                                                         return [ def[0] ];
@@ -1121,10 +1122,10 @@ function ast_squeeze(ast, options) {
                                 }
                         });
                         return a;
-                })([]);
+                }))([]);
 
-                if (options.make_seqs) statements = (function(a, prev) {
-                        statements.forEach(function(cur){
+                if (options.make_seqs) statements = (((a, prev) => {
+                        statements.forEach(cur => {
                                 if (prev && prev[0] == "stat" && cur[0] == "stat") {
                                         prev[1] = [ "seq", prev[1], cur[1] ];
                                 } else {
@@ -1142,7 +1143,7 @@ function ast_squeeze(ast, options) {
                                            [ "seq", a[a.length-2][1], a[a.length-1][1] ]]);
                         }
                         return a;
-                })([]);
+                }))([]);
 
                 // this increases jQuery by 1K.  Probably not such a good idea after all..
                 // part of this is done in prepare_ifs anyway.
@@ -1166,10 +1167,10 @@ function ast_squeeze(ast, options) {
                 // })(0, []);
 
                 return statements;
-        };
+        }
 
         function make_if(c, t, e) {
-                return when_constant(c, function(ast, val){
+                return when_constant(c, (ast, val) => {
                         if (val) {
                                 warn_unreachable(e);
                                 return t;
@@ -1177,10 +1178,8 @@ function ast_squeeze(ast, options) {
                                 warn_unreachable(t);
                                 return e;
                         }
-                }, function() {
-                        return make_real_if(c, t, e);
-                });
-        };
+                }, () => make_real_if(c, t, e));
+        }
 
         function make_real_if(c, t, e) {
                 c = walk(c);
@@ -1195,7 +1194,7 @@ function ast_squeeze(ast, options) {
                         e = null;
                 } else {
                         // if we have both else and then, maybe it makes sense to switch them?
-                        (function(){
+                        ((() => {
                                 var a = gen_code(c);
                                 var n = negate(c);
                                 var b = gen_code(n);
@@ -1205,7 +1204,7 @@ function ast_squeeze(ast, options) {
                                         e = tmp;
                                         c = n;
                                 }
-                        })();
+                        }))();
                 }
                 if (empty(e) && empty(t))
                         return [ "stat", c ];
@@ -1246,10 +1245,10 @@ function ast_squeeze(ast, options) {
                         ret = walk([ "block", ret ]);
                 }
                 return ret;
-        };
+        }
 
         function _do_while(cond, body) {
-                return when_constant(cond, function(cond, val){
+                return when_constant(cond, (cond, val) => {
                         if (!val) {
                                 warn_unreachable(body);
                                 return [ "block" ];
@@ -1257,7 +1256,7 @@ function ast_squeeze(ast, options) {
                                 return [ "for", null, null, null, walk(body) ];
                         }
                 });
-        };
+        }
 
         return w.with_walkers({
                 "sub": function(expr, subscript) {
@@ -1271,13 +1270,11 @@ function ast_squeeze(ast, options) {
                 },
                 "if": make_if,
                 "toplevel": function(body) {
-                        return [ "toplevel", with_scope(this.scope, function(){
-                                return tighten(body);
-                        }) ];
+                        return [ "toplevel", with_scope(this.scope, () => tighten(body)) ];
                 },
                 "switch": function(expr, body) {
                         var last = body.length - 1;
-                        return [ "switch", walk(expr), MAP(body, function(branch, i){
+                        return [ "switch", walk(expr), MAP(body, (branch, i) => {
                                 var block = tighten(branch[1]);
                                 if (i == last && block.length > 0) {
                                         var node = block[block.length - 1];
@@ -1315,9 +1312,8 @@ function ast_squeeze(ast, options) {
                         var ret = [ "unary-prefix", op, expr ];
                         if (op == "!")
                                 ret = best_of(ret, negate(expr));
-                        return when_constant(ret, function(ast, val){
-                                return walk(ast); // it's either true or false, so minifies to !0 or !1
-                        }, function() { return ret });
+                        return when_constant(ret, (ast, val) => // it's either true or false, so minifies to !0 or !1
+                        walk(ast), () => ret);
                 },
                 "name": function(name) {
                         switch (name) {
@@ -1340,7 +1336,7 @@ function ast_squeeze(ast, options) {
                         }
                 },
                 "while": _do_while
-        }, function() {
+        }, () => {
                 for (var i = 0; i < 2; ++i) {
                         ast = prepare_ifs(ast);
                         ast = ast_add_scope(ast);
@@ -1364,8 +1360,9 @@ var DOT_CALL_NO_PARENS = /*jsp.*/array_to_hash([
 ]);
 
 function make_string(str, ascii_only) {
-        var dq = 0, sq = 0;
-        str = str.replace(/[\\\b\f\n\r\t\x22\x27\u2028\u2029]/g, function(s){
+        var dq = 0;
+        var sq = 0;
+        str = str.replace(/[\\\b\f\n\r\t\x22\x27\u2028\u2029]/g, s => {
                 switch (s) {
                     case "\\": return "\\\\";
                     case "\b": return "\\b";
@@ -1386,7 +1383,7 @@ function make_string(str, ascii_only) {
 };
 
 function to_ascii(str) {
-        return str.replace(/[\u0080-\uffff]/g, function(ch) {
+        return str.replace(/[\u0080-\uffff]/g, ch => {
                 var code = ch.charCodeAt(0).toString(16);
                 while (code.length < 4) code = "0" + code;
                 return "\\u" + code;
@@ -1406,23 +1403,23 @@ function gen_code(ast, options) {
                 inline_script: false
         });
         var beautify = !!options.beautify;
-        var indentation = 0,
-            newline = beautify ? "\n" : "",
-            space = beautify ? " " : "";
+        var indentation = 0;
+        var newline = beautify ? "\n" : "";
+        var space = beautify ? " " : "";
 
         function encode_string(str) {
                 var ret = make_string(str, options.ascii_only);
                 if (options.inline_script)
                         ret = ret.replace(/<\x2fscript([>/\t\n\f\r ])/gi, "<\\/script$1");
                 return ret;
-        };
+        }
 
         function make_name(name) {
                 name = name.toString();
                 if (options.ascii_only)
                         name = to_ascii(name);
                 return name;
-        };
+        }
 
         function indent(line) {
                 if (line == null)
@@ -1430,14 +1427,14 @@ function gen_code(ast, options) {
                 if (beautify)
                         line = repeat_string(" ", options.indent_start + indentation * options.indent_level) + line;
                 return line;
-        };
+        }
 
         function with_indent(cont, incr) {
                 if (incr == null) incr = 1;
                 indentation += incr;
-                try { return cont.apply(null, slice(arguments, 1)); }
+                try { return cont(...slice(arguments, 1)); }
                 finally { indentation -= incr; }
-        };
+        }
 
         function add_spaces(a) {
                 if (beautify)
@@ -1453,11 +1450,11 @@ function gen_code(ast, options) {
                         }
                 }
                 return b.join("");
-        };
+        }
 
         function add_commas(a) {
                 return a.join("," + space);
-        };
+        }
 
         function parenthesize(expr) {
                 var gen = make(expr);
@@ -1467,7 +1464,7 @@ function gen_code(ast, options) {
                                 return "(" + gen + ")";
                 }
                 return gen;
-        };
+        }
 
         function best_of(a) {
                 if (a.length == 1) {
@@ -1479,7 +1476,7 @@ function gen_code(ast, options) {
                         return a.length <= b.length ? a : b;
                 }
                 return best_of([ a[0], best_of(a.slice(1)) ]);
-        };
+        }
 
         function needs_parens(expr) {
                 if (expr[0] == "function" || expr[0] == "object") {
@@ -1491,7 +1488,10 @@ function gen_code(ast, options) {
                         // we're the first in this "seq" and the
                         // parent is "stat", and so on.  Messy stuff,
                         // but it worths the trouble.
-                        var a = slice(w.stack()), self = a.pop(), p = a.pop();
+                        var a = slice(w.stack());
+
+                        var self = a.pop();
+                        var p = a.pop();
                         while (p) {
                                 if (p[0] == "stat") return true;
                                 if (((p[0] == "seq" || p[0] == "call" || p[0] == "dot" || p[0] == "sub" || p[0] == "conditional") && p[1] === self) ||
@@ -1504,10 +1504,12 @@ function gen_code(ast, options) {
                         }
                 }
                 return !HOP(DOT_CALL_NO_PARENS, expr[0]);
-        };
+        }
 
         function make_num(num) {
-                var str = num.toString(10), a = [ str.replace(/^0\./, ".") ], m;
+                var str = num.toString(10);
+                var a = [ str.replace(/^0\./, ".") ];
+                var m;
                 if (Math.floor(num) === num) {
                         a.push("0x" + num.toString(16).toLowerCase(), // probably pointless
                                "0" + num.toString(8)); // same.
@@ -1519,7 +1521,7 @@ function gen_code(ast, options) {
                                str.substr(str.indexOf(".")));
                 }
                 return best_of(a);
-        };
+        }
 
         var w = ast_walker();
         var make = w.walk;
@@ -1538,10 +1540,8 @@ function gen_code(ast, options) {
                                 return make_block.apply(this, arguments);
                         } else {
                                 return MAP(make_block_statements(statements, true),
-                                           function(line, i) {
-                                                   // the first line is already indented
-                                                   return i > 0 ? indent(line) : line;
-                                           }).join(newline);
+                                           (line, i) => // the first line is already indented
+                                           (i > 0 ? indent(line) : line)).join(newline);
                         }
                 },
                 "block": make_block,
@@ -1562,13 +1562,14 @@ function gen_code(ast, options) {
                 },
                 "new": function(ctor, args) {
                         args = args.length > 0 ? "(" + add_commas(MAP(args, make)) + ")" : "";
-                        return add_spaces([ "new", parenthesize(ctor, "seq", "binary", "conditional", "assign", function(expr){
-                                var w = ast_walker(), has_call = {};
+                        return add_spaces([ "new", parenthesize(ctor, "seq", "binary", "conditional", "assign", expr => {
+                                var w = ast_walker();
+                                var has_call = {};
                                 try {
                                         w.with_walkers({
                                                 "call": function() { throw has_call },
                                                 "function": function() { return this }
-                                        }, function(){
+                                        }, () => {
                                                 w.walk(expr);
                                         });
                                 } catch(ex) {
@@ -1604,7 +1605,8 @@ function gen_code(ast, options) {
                         return add_spaces([ make(lvalue), op, parenthesize(rvalue, "seq") ]);
                 },
                 "dot": function(expr) {
-                        var out = make(expr), i = 1;
+                        var out = make(expr);
+                        var i = 1;
                         if (expr[0] == "num") {
                                 if (!/\./.test(expr[1]))
                                         out += ".";
@@ -1618,9 +1620,7 @@ function gen_code(ast, options) {
                         var f = make(func);
                         if (needs_parens(func))
                                 f = "(" + f + ")";
-                        return f + "(" + add_commas(MAP(args, function(expr){
-                                return parenthesize(expr, "seq");
-                        })) + ")";
+                        return f + "(" + add_commas(MAP(args, expr => parenthesize(expr, "seq"))) + ")";
                 },
                 "function": make_function,
                 "defun": make_function,
@@ -1659,7 +1659,8 @@ function gen_code(ast, options) {
                         return add_spaces(out) + ";";
                 },
                 "binary": function(operator, lvalue, rvalue) {
-                        var left = make(lvalue), right = make(rvalue);
+                        var left = make(lvalue);
+                        var right = make(rvalue);
                         // XXX: I'm pretty sure other cases will bite here.
                         //      we need to be smarter.
                         //      adding parens all the time is the safest bet.
@@ -1699,34 +1700,33 @@ function gen_code(ast, options) {
                 "object": function(props) {
                         if (props.length == 0)
                                 return "{}";
-                        return "{" + newline + with_indent(function(){
-                                return MAP(props, function(p){
-                                        if (p.length == 3) {
-                                                // getter/setter.  The name is in p[0], the arg.list in p[1][2], the
-                                                // body in p[1][3] and type ("get" / "set") in p[2].
-                                                return indent(make_function(p[0], p[1][2], p[1][3], p[2]));
-                                        }
-                                        var key = p[0], val = parenthesize(p[1], "seq");
-                                        if (options.quote_keys) {
-                                                key = encode_string(key);
-                                        } else if ((typeof key == "number" || !beautify && +key + "" == key)
-                                                   && parseFloat(key) >= 0) {
-                                                key = make_num(+key);
-                                        } else if (!is_identifier(key)) {
-                                                key = encode_string(key);
-                                        }
-                                        return indent(add_spaces(beautify && options.space_colon
-                                                                 ? [ key, ":", val ]
-                                                                 : [ key + ":", val ]));
-                                }).join("," + newline);
-                        }) + newline + indent("}");
+                        return "{" + newline + with_indent(() => MAP(props, p => {
+                                if (p.length == 3) {
+                                        // getter/setter.  The name is in p[0], the arg.list in p[1][2], the
+                                        // body in p[1][3] and type ("get" / "set") in p[2].
+                                        return indent(make_function(p[0], p[1][2], p[1][3], p[2]));
+                                }
+                                var key = p[0];
+                                var val = parenthesize(p[1], "seq");
+                                if (options.quote_keys) {
+                                        key = encode_string(key);
+                                } else if ((typeof key == "number" || !beautify && +key + "" == key)
+                                           && parseFloat(key) >= 0) {
+                                        key = make_num(+key);
+                                } else if (!is_identifier(key)) {
+                                        key = encode_string(key);
+                                }
+                                return indent(add_spaces(beautify && options.space_colon
+                                                         ? [ key, ":", val ]
+                                                         : [ key + ":", val ]));
+                        }).join("," + newline)) + newline + indent("}");
                 },
                 "regexp": function(rx, mods) {
                         return "/" + rx + "/" + mods;
                 },
                 "array": function(elements) {
                         if (elements.length == 0) return "[]";
-                        return add_spaces([ "[", add_commas(MAP(elements, function(el){
+                        return add_spaces([ "[", add_commas(MAP(elements, el => {
                                 if (!beautify && el[0] == "atom" && el[1] == "undefined") return "";
                                 return parenthesize(el, "seq");
                         })), "]" ]);
@@ -1734,8 +1734,8 @@ function gen_code(ast, options) {
                 "stat": function(stmt) {
                         return make(stmt).replace(/;*\s*$/, ";");
                 },
-                "seq": function() {
-                        return add_commas(MAP(slice(arguments), make));
+                "seq": function(...args) {
+                        return add_commas(MAP(slice(args), make));
                 },
                 "label": function(name, block) {
                         return add_spaces([ make_name(name), ":", make(block) ]);
@@ -1746,7 +1746,7 @@ function gen_code(ast, options) {
                 "atom": function(name) {
                         return make_name(name);
                 }
-        }, function(){ return make(ast) });
+        }, () => make(ast));
 
         // The squeezer replaces "block"-s that contain only a single
         // statement with the statement itself; technically, the AST
@@ -1777,7 +1777,7 @@ function gen_code(ast, options) {
                         else break;
                 }
                 return make(th);
-        };
+        }
 
         function make_function(name, args, body, keyword) {
                 var out = keyword || "function";
@@ -1786,7 +1786,7 @@ function gen_code(ast, options) {
                 }
                 out += "(" + add_commas(MAP(args, make_name)) + ")";
                 return add_spaces([ out, make_block(body) ]);
-        };
+        }
 
         function must_has_semicolon(node) {
                 switch (node[0]) {
@@ -1804,7 +1804,7 @@ function gen_code(ast, options) {
                         }
                         return must_has_semicolon(node[2]); // dive into the `then' branch
                 }
-        };
+        }
 
         function make_block_statements(statements, noindent) {
                 for (var a = [], last = statements.length - 1, i = 0; i <= last; ++i) {
@@ -1818,45 +1818,42 @@ function gen_code(ast, options) {
                         }
                 }
                 return noindent ? a : MAP(a, indent);
-        };
+        }
 
         function make_switch_block(body) {
                 var n = body.length;
                 if (n == 0) return "{}";
-                return "{" + newline + MAP(body, function(branch, i){
-                        var has_body = branch[1].length > 0, code = with_indent(function(){
-                                return indent(branch[0]
-                                              ? add_spaces([ "case", make(branch[0]) + ":" ])
-                                              : "default:");
-                        }, 0.5) + (has_body ? newline + with_indent(function(){
-                                return make_block_statements(branch[1]).join(newline);
-                        }) : "");
+                return "{" + newline + MAP(body, (branch, i) => {
+                        var has_body = branch[1].length > 0;
+
+                        var code = with_indent(() => indent(branch[0]
+                                      ? add_spaces([ "case", make(branch[0]) + ":" ])
+                                      : "default:"), 0.5) + (has_body ? newline + with_indent(() => make_block_statements(branch[1]).join(newline)) : "");
+
                         if (!beautify && has_body && i < n - 1)
                                 code += ";";
                         return code;
                 }).join(newline) + newline + indent("}");
-        };
+        }
 
         function make_block(statements) {
                 if (!statements) return ";";
                 if (statements.length == 0) return "{}";
-                return "{" + newline + with_indent(function(){
-                        return make_block_statements(statements).join(newline);
-                }) + newline + indent("}");
-        };
+                return "{" + newline + with_indent(() => make_block_statements(statements).join(newline)) + newline + indent("}");
+        }
 
         function make_1vardef(def) {
-                var name = def[0], val = def[1];
+                var name = def[0];
+                var val = def[1];
                 if (val != null)
                         name = add_spaces([ make_name(name), "=", parenthesize(val, "seq") ]);
                 return name;
-        };
-
+        }
 };
 
 function split_lines(code, max_line_length) {
         var splits = [ 0 ];
-        jsp.parse(function(){
+        jsp.parse((() => {
                 var next_token = jsp.tokenizer(code);
                 var last_split = 0;
                 var prev_token;
@@ -1867,8 +1864,8 @@ function split_lines(code, max_line_length) {
                         last_split = tok.pos;
                         splits.push(last_split);
                 };
-                function custom(){
-                        var tok = next_token.apply(this, arguments);
+                function custom(...args) {
+                        var tok = next_token.apply(this, args);
                         out: {
                                 if (prev_token) {
                                         if (prev_token.type == "keyword") break out;
@@ -1887,14 +1884,12 @@ function split_lines(code, max_line_length) {
                         prev_token = tok;
                         return tok;
                 };
-                custom.context = function() {
-                        return next_token.context.apply(this, arguments);
+                custom.context = function(...args) {
+                        return next_token.context.apply(this, args);
                 };
                 return custom;
-        }());
-        return splits.map(function(pos, i){
-                return code.substring(pos, splits[i + 1] || code.length);
-        }).join("\n");
+        })());
+        return splits.map((pos, i) => code.substring(pos, splits[i + 1] || code.length)).join("\n");
 };
 
 /* -----[ Utilities ]----- */
@@ -1934,37 +1929,39 @@ function HOP(obj, prop) {
 
 var MAP;
 
-(function(){
-        MAP = function(a, f, o) {
-                var ret = [], top = [], i;
+((() => {
+        MAP = (a, f, o) => {
+                var ret = [];
+                var top = [];
+                var i;
                 function doit() {
                         var val = f.call(o, a[i], i);
                         if (val instanceof AtTop) {
                                 val = val.v;
                                 if (val instanceof Splice) {
-                                        top.push.apply(top, val.v);
+                                        top.push(...val.v);
                                 } else {
                                         top.push(val);
                                 }
                         }
                         else if (val != skip) {
                                 if (val instanceof Splice) {
-                                        ret.push.apply(ret, val.v);
+                                        ret.push(...val.v);
                                 } else {
                                         ret.push(val);
                                 }
                         }
-                };
+                }
                 if (a instanceof Array) for (i = 0; i < a.length; ++i) doit();
                 else for (i in a) if (HOP(a, i)) doit();
                 return top.concat(ret);
         };
-        MAP.at_top = function(val) { return new AtTop(val) };
-        MAP.splice = function(val) { return new Splice(val) };
+        MAP.at_top = val => new AtTop(val);
+        MAP.splice = val => new Splice(val);
         var skip = MAP.skip = {};
         function AtTop(val) { this.v = val };
         function Splice(val) { this.v = val };
-})();
+}))();
 
 /* -----[ Exports ]----- */
 /*

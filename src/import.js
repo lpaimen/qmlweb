@@ -46,7 +46,7 @@
  *
  *
  */
-(function() {
+((() => {
 
 function parseQML(file) {
     var contents = getUrlContents(file + ".js");
@@ -71,7 +71,7 @@ function parseQML(file) {
  * @private
  * @return {mixed} String of contents or false in errors.
  */
-getUrlContents = function (url) {
+getUrlContents = url => {
     var xhr = new XMLHttpRequest();
     xhr.open("GET", url, false);
     xhr.send(null);
@@ -88,14 +88,16 @@ getUrlContents = function (url) {
  * @return {Object} Object, where .internals lists qmldir internal references
  *                          and .externals lists qmldir external references.
  */
-readQmlDir = function (url) {
-    var qmldir = getUrlContents(url += "/qmldir"), // Modifies url here!
-        lines,
-        line,
-        internals = {},
-        externals = {},
-        match,
-        i;
+readQmlDir = url => {
+    var // Modifies url here!
+    qmldir = getUrlContents(url += "/qmldir");
+
+    var lines;
+    var line;
+    var internals = {};
+    var externals = {};
+    var match;
+    var i;
 
     if (qmldir === false) {
         return false;
@@ -127,7 +129,7 @@ readQmlDir = function (url) {
             console.log(url + ": unmatched: " + line);
         }
     }
-    return {internals: internals, externals: externals};
+    return {internals, externals};
 }
 
 
@@ -136,8 +138,7 @@ readQmlDir = function (url) {
  * @return {object} Object which has "var"s and functions from file as keys, or
  *         undefined if operation fails
  */
-importJs = function (filename) {
-
+importJs = filename => {
     // todo: .pragma support
 
     // Exports as follow:
@@ -146,9 +147,10 @@ importJs = function (filename) {
     //                        rare case, however.
     // var a = function(){} exports only a.
 
-    var i,
-        src = getUrlContents(filename),
-        exports = [];
+    var i;
+
+    var src = getUrlContents(filename);
+    var exports = [];
 
     if (src === false) {
         return;
@@ -186,7 +188,6 @@ importJs = function (filename) {
  * @return Array Array of local variable names to export
  */
 function readExports(src) {
-
     // Eat src until str is found. Recurse if recursive set.
     function eatUntil(src, str, recursive) {
         var i;
@@ -233,14 +234,17 @@ function readExports(src) {
     // Strip comments and code blocks from the input source
     // This is quite similar with eatCodeBlock but still a bit different.
     // If either section has bugs, check the other section, too!
-    var i = 0,
-        // Code without blocks and comments
-        semi = "",
-        // todo: these doesn't match with exports containing "$"
-        matcher = /var\s+\w+|function\s+\w+/g,
-        matches,
-        tmp,
-        exports = [];
+    var i = 0;
+
+    var // Code without blocks and comments
+    semi = "";
+
+    var // todo: these doesn't match with exports containing "$"
+    matcher = /var\s+\w+|function\s+\w+/g;
+
+    var matches;
+    var tmp;
+    var exports = [];
 
     while (i < src.length) {
         switch (src[i]) {
@@ -286,4 +290,4 @@ function readExports(src) {
     return exports;
 }
 
-})();
+}))();
