@@ -74,7 +74,7 @@ function clone(obj){
 }
 
 // dummy javascript console in case it doesn't exist.
-if (!window.console) window.console = { log: function(){} };
+if (!window.console) window.console = { log() {} };
 
 /* -----[ Tokenizer (constants) ]----- */
 
@@ -349,8 +349,8 @@ function tokenizer($TEXT) {
                                    (type == "keyword" && HOP(KEYWORDS_BEFORE_EXPRESSION, value)) ||
                                    (type == "punc" && HOP(PUNC_BEFORE_EXPRESSION, value)));
                 var ret = {
-                        type  : type,
-                        value : value,
+                        type,
+                        value,
                         line  : S.tokline,
                         col   : S.tokcol,
                         pos   : S.tokpos,
@@ -370,7 +370,9 @@ function tokenizer($TEXT) {
         };
 
         function read_while(pred) {
-                var ret = "", ch = peek(), i = 0;
+                var ret = "";
+                var ch = peek();
+                var i = 0;
                 while (ch && pred(ch, i++)) {
                         ret += next();
                         ch = peek();
@@ -383,8 +385,11 @@ function tokenizer($TEXT) {
         };
 
         function read_num(prefix) {
-                var has_e = false, after_e = false, has_x = false, has_dot = prefix == ".";
-                var num = read_while(function(ch, i){
+                var has_e = false;
+                var after_e = false;
+                var has_x = false;
+                var has_dot = prefix == ".";
+                var num = read_while((ch, i) => {
                         if (ch == "x" || ch == "X") {
                                 if (has_x) return false;
                                 return has_x = true;
@@ -444,8 +449,9 @@ function tokenizer($TEXT) {
         };
 
         function read_string() {
-                return with_eof_error("Unterminated string constant", function(){
-                        var quote = next(), ret = "";
+                return with_eof_error("Unterminated string constant", () => {
+                        var quote = next();
+                        var ret = "";
                         for (;;) {
                                 var ch = next(true);
                                 if (ch == "\\") ch = read_escaped_char();
@@ -458,7 +464,8 @@ function tokenizer($TEXT) {
 
         function read_line_comment() {
                 next();
-                var i = find("\n"), ret;
+                var i = find("\n");
+                var ret;
                 if (i == -1) {
                         ret = S.text.substr(S.pos);
                         S.pos = S.text.length;
@@ -471,10 +478,10 @@ function tokenizer($TEXT) {
 
         function read_multiline_comment() {
                 next();
-                return with_eof_error("Unterminated multiline comment", function(){
-                        var i = find("*/", true),
-                            text = S.text.substring(S.pos, i),
-                            tok = token("comment2", text, true);
+                return with_eof_error("Unterminated multiline comment", () => {
+                        var i = find("*/", true);
+                        var text = S.text.substring(S.pos, i);
+                        var tok = token("comment2", text, true);
                         S.pos = i + 2;
                         S.line += text.split("\n").length - 1;
                         S.newline_before = text.indexOf("\n") >= 0;
@@ -491,7 +498,9 @@ function tokenizer($TEXT) {
         };
 
         function read_name() {
-                var backslash = false, name = "", ch;
+                var backslash = false;
+                var name = "";
+                var ch;
                 while ((ch = peek()) != null) {
                         if (!backslash) {
                                 if (ch == "\\") backslash = true, next();
@@ -510,8 +519,11 @@ function tokenizer($TEXT) {
         };
 
         function read_regexp() {
-                return with_eof_error("Unterminated regular expression", function(){
-                        var prev_backslash = false, regexp = "", ch, in_class = false;
+                return with_eof_error("Unterminated regular expression", () => {
+                        var prev_backslash = false;
+                        var regexp = "";
+                        var ch;
+                        var in_class = false;
                         while ((ch = next(true))) if (prev_backslash) {
                                 regexp += "\\" + ch;
                                 prev_backslash = false;
@@ -607,7 +619,7 @@ function tokenizer($TEXT) {
                 parse_error("Unexpected character '" + ch + "'");
         };
 
-        next_token.context = function(nc) {
+        next_token.context = nc => {
                 if (nc) S = nc;
                 return S;
         };
@@ -632,19 +644,19 @@ var UNARY_PREFIX = array_to_hash([
 
 var UNARY_POSTFIX = array_to_hash([ "--", "++" ]);
 
-var ASSIGNMENT = (function(a, ret, i){
+var ASSIGNMENT = (((a, ret, i) => {
         while (i < a.length) {
                 ret[a[i]] = a[i].substr(0, a[i].length - 1);
                 i++;
         }
         return ret;
-})(
+}))(
         ["+=", "-=", "/=", "*=", "%=", ">>=", "<<=", ">>>=", "|=", "^=", "&="],
         { "=": true },
         0
 );
 
-var PRECEDENCE = (function(a, ret){
+var PRECEDENCE = (((a, ret) => {
         for (var i = 0, n = 1; i < a.length; ++i, ++n) {
                 var b = a[i];
                 for (var j = 0; j < b.length; ++j) {
@@ -652,7 +664,7 @@ var PRECEDENCE = (function(a, ret){
                 }
         }
         return ret;
-})(
+}))(
         [
                 ["||"],
                 ["&&"],
@@ -755,8 +767,8 @@ function qmlparse($TEXT, exigent_mode, embed_tokens) {
                 else if (!can_insert_semicolon()) unexpected();
         };
 
-        function as() {
-                return slice(arguments);
+        function as(...args) {
+                return slice(args);
         };
 
         function parenthesised() {
@@ -771,16 +783,16 @@ function qmlparse($TEXT, exigent_mode, embed_tokens) {
         };
 
         function maybe_embed_tokens(parser) {
-                if (embed_tokens) return function() {
+                if (embed_tokens) return function(...args) {
                         var start = S.token;
-                        var ast = parser.apply(this, arguments);
+                        var ast = parser.apply(this, args);
                         ast[0] = add_tokens(ast[0], start, prev());
                         return ast;
                 };
                 else return parser;
         };
 
-        var statement = maybe_embed_tokens(function() {
+        var statement = maybe_embed_tokens(() => {
                 if (is("operator", "/")) {
                         S.peeked = null;
                         S.token = S.input(true); // force regexp
@@ -825,10 +837,10 @@ function qmlparse($TEXT, exigent_mode, embed_tokens) {
                                 return as("debugger");
 
                             case "do":
-                                return (function(body){
+                                return ((body => {
                                         expect_token("keyword", "while");
                                         return as("do", prog1(parenthesised, semicolon), body);
-                                })(in_loop(statement));
+                                }))(in_loop(statement));
 
                             case "for":
                                 return for_();
@@ -878,7 +890,8 @@ function qmlparse($TEXT, exigent_mode, embed_tokens) {
 
         function labeled_statement(label) {
                 S.labels.push(label);
-                var start = S.token, stat = statement();
+                var start = S.token;
+                var stat = statement();
                 if (exigent_mode && !HOP(STATEMENTS_WITH_LABELS, stat[0]))
                         unexpected(start);
                 S.labels.pop();
@@ -932,7 +945,7 @@ function qmlparse($TEXT, exigent_mode, embed_tokens) {
                 return as("for-in", init, lhs, obj, in_loop(statement));
         };
 
-        var function_ = maybe_embed_tokens(function(in_statement) {
+        var function_ = maybe_embed_tokens(in_statement => {
                 var name = is("name") ? prog1(S.token.value, next) : null;
                 if (in_statement && !name)
                         unexpected();
@@ -940,7 +953,7 @@ function qmlparse($TEXT, exigent_mode, embed_tokens) {
                 return as(in_statement ? "defun" : "function",
                           name,
                           // arguments
-                          (function(first, a){
+                          (((first, a) => {
                                   while (!is("punc", ")")) {
                                           if (first) first = false; else expect(",");
                                           if (!is("name")) unexpected();
@@ -949,9 +962,9 @@ function qmlparse($TEXT, exigent_mode, embed_tokens) {
                                   }
                                   next();
                                   return a;
-                          })(true, []),
+                          }))(true, []),
                           // body
-                          (function(){
+                          ((() => {
                                   ++S.in_function;
                                   var loop = S.in_loop;
                                   S.in_loop = 0;
@@ -959,11 +972,13 @@ function qmlparse($TEXT, exigent_mode, embed_tokens) {
                                   --S.in_function;
                                   S.in_loop = loop;
                                   return a;
-                          })());
+                          }))());
         });
 
         function if_() {
-                var cond = parenthesised(), body = statement(), belse;
+                var cond = parenthesised();
+                var body = statement();
+                var belse;
                 if (is("keyword", "else")) {
                         next();
                         belse = statement();
@@ -982,9 +997,10 @@ function qmlparse($TEXT, exigent_mode, embed_tokens) {
                 return a;
         };
 
-        var switch_block_ = curry(in_loop, function(){
+        var switch_block_ = curry(in_loop, () => {
                 expect("{");
-                var a = [], cur = null;
+                var a = [];
+                var cur = null;
                 while (!is("punc", "}")) {
                         if (is("eof")) unexpected();
                         if (is("keyword", "case")) {
@@ -1009,7 +1025,9 @@ function qmlparse($TEXT, exigent_mode, embed_tokens) {
         });
 
         function try_() {
-                var body = block_(), bcatch, bfinally;
+                var body = block_();
+                var bcatch;
+                var bfinally;
                 if (is("keyword", "catch")) {
                         next();
                         expect("(");
@@ -1058,7 +1076,8 @@ function qmlparse($TEXT, exigent_mode, embed_tokens) {
         };
 
         function new_() {
-                var newexp = expr_atom(false), args;
+                var newexp = expr_atom(false);
+                var args;
                 if (is("punc", "(")) {
                         next();
                         args = expr_list(")");
@@ -1068,7 +1087,7 @@ function qmlparse($TEXT, exigent_mode, embed_tokens) {
                 return subscripts(as("new", newexp, args), true);
         };
 
-        var expr_atom = maybe_embed_tokens(function(allow_calls) {
+        var expr_atom = maybe_embed_tokens(allow_calls => {
                 if (is("operator", "new")) {
                         next();
                         return new_();
@@ -1106,7 +1125,8 @@ function qmlparse($TEXT, exigent_mode, embed_tokens) {
         });
 
         function expr_list(closing, allow_trailing_comma, allow_empty) {
-                var first = true, a = [];
+                var first = true;
+                var a = [];
                 while (!is("punc", closing)) {
                         if (first) first = false; else expect(",");
                         if (allow_trailing_comma && is("punc", closing)) break;
@@ -1125,7 +1145,8 @@ function qmlparse($TEXT, exigent_mode, embed_tokens) {
         };
 
         function object_() {
-                var first = true, a = [];
+                var first = true;
+                var a = [];
                 while (!is("punc", "}")) {
                         if (first) first = false; else expect(",");
                         if (!exigent_mode && is("punc", "}"))
@@ -1232,7 +1253,8 @@ function qmlparse($TEXT, exigent_mode, embed_tokens) {
         };
 
         function maybe_assign(no_in) {
-                var left = maybe_conditional(no_in), val = S.token.value;
+                var left = maybe_conditional(no_in);
+                var val = S.token.value;
                 if (is("operator") && HOP(ASSIGNMENT, val)) {
                         if (is_assignable(left)) {
                                 next();
@@ -1304,18 +1326,18 @@ function qmlparse($TEXT, exigent_mode, embed_tokens) {
         }
 
         function qmldefaultprop() {
-            next(); //We trust that the next is "property"
-            next();
-            var type = S.token.value;
-            next();
-            var name = S.token.value;
-            next();
-            expect(":");
-            var from = S.token.pos,
-                stat = statement(),
-                to = S.token.pos;
-            return as("qmldefaultprop", name, stat,
-                    $TEXT.substr(from, to - from));
+                next(); //We trust that the next is "property"
+                next();
+                var type = S.token.value;
+                next();
+                var name = S.token.value;
+                next();
+                expect(":");
+                var from = S.token.pos;
+                var stat = statement();
+                var to = S.token.pos;
+                return as("qmldefaultprop", name, stat,
+                        $TEXT.substr(from, to - from));
         }
 
         function qmlsignaldef() {
@@ -1332,7 +1354,7 @@ function qmlparse($TEXT, exigent_mode, embed_tokens) {
                         var type = S.token.value;
                         next();
                         if (!is("name")) unexpected();
-                        args.push({type: type, name: S.token.value});
+                        args.push({type, name: S.token.value});
                         next();
                 }
                 next();
@@ -1363,26 +1385,26 @@ function qmlparse($TEXT, exigent_mode, embed_tokens) {
                 } else {
                     // property statement
                     if (is("punc", ".")) {
-                        // anchors, fonts etc, a.b: statement;
-                        // Can also be Component.onCompleted: ...
-                        // Assume only one subproperty
-                        next();
-                        var subname = S.token.value;
-                        next();
-                        expect(":");
-                        var from = S.token.pos,
-                            stat = statement(),
-                            to = S.token.pos;
-                        return as("qmlobjdef", propname, subname, stat,
-                            $TEXT.substr(from, to - from));
+                            // anchors, fonts etc, a.b: statement;
+                            // Can also be Component.onCompleted: ...
+                            // Assume only one subproperty
+                            next();
+                            var subname = S.token.value;
+                            next();
+                            expect(":");
+                            var from = S.token.pos;
+                            var stat = statement();
+                            var to = S.token.pos;
+                            return as("qmlobjdef", propname, subname, stat,
+                                $TEXT.substr(from, to - from));
                     } else {
-                        // Evaluatable item
-                        expect(":");
-                        var from = S.token.pos,
-                            stat = statement(),
-                            to = S.token.pos;
-                        return as("qmlprop", propname, stat,
-                            $TEXT.substr(from, to - from));
+                            // Evaluatable item
+                            expect(":");
+                            var from = S.token.pos;
+                            var stat = statement();
+                            var to = S.token.pos;
+                            return as("qmlprop", propname, stat,
+                                $TEXT.substr(from, to - from));
                     }
                 }
             } else if (is("keyword", "default")) {
@@ -1415,12 +1437,12 @@ function qmlparse($TEXT, exigent_mode, embed_tokens) {
             next();
         }
 
-        return as("toplevel", (function(a){
+        return as("toplevel", ((a => {
                 while (!is("eof"))
                         a.push(qmldocument());
 //                        a.push(statement());
                 return a;
-        })([]));
+        }))([]));
 
 };
 
@@ -1465,7 +1487,7 @@ function HOP(obj, prop) {
         return Object.prototype.hasOwnProperty.call(obj, prop);
 };
 
-var warn = function() {};
+var warn = () => {};
 
 /**
  * Create QML binding.
@@ -1474,37 +1496,37 @@ var warn = function() {};
  * @return {Object} Object representing the binding
  */
 function QMLBinding(src, tree) {
-    this.src = src;
-    this.tree = tree;
+        this.src = src;
+        this.tree = tree;
 
-    this.deps = {};
+        this.deps = {};
 
-    var w = ast_walker(),
-        walk = w.walk,
-        that = this,
-        depchain = [];
+        var w = ast_walker();
+        var walk = w.walk;
+        var that = this;
+        var depchain = [];
 
-    w.with_walkers(
-        {
-            "dot": function(expr, name) {
-                depchain.push(name);
-                return [this[0], walk(expr)].concat(slice(arguments, 1));
-            },
-            "name": function(name) {
-                var deps,
-                    i;
+        w.with_walkers(
+            {
+                "dot": function(expr, name) {
+                    depchain.push(name);
+                    return [this[0], walk(expr)].concat(slice(arguments, 1));
+                },
+                "name": function(name) {
+                        var deps;
+                        var i;
 
-                deps = that.deps[name] = that.deps[name] || {};
-                for (i = depchain.length - 1; i >= 0; i-- ) {
-                    var d = depchain[i];
-                    deps[d] = deps[d] || {};
-                    deps = deps[d];
+                        deps = that.deps[name] = that.deps[name] || {};
+                        for (i = depchain.length - 1; i >= 0; i-- ) {
+                            var d = depchain[i];
+                            deps[d] = deps[d] || {};
+                            deps = deps[d];
+                        }
+                        depchain = [];
                 }
-                depchain = [];
-            }
-        }, function() {
-            walk(tree);
-        })
+            }, () => {
+                walk(tree);
+            })
 }
 
 QMLBinding.prototype.toJSON = function() {
@@ -1538,38 +1560,38 @@ function convertToEngine(tree) {
                 $properties: {} };
 
             for (var i in statements) {
-                var statement = statements[i],
-                    name = statement[1],
-                    val = walk(statement);
-                switch (statement[0]) {
-                    case "qmlprop":
-                        item[name] = val;
-                        break;
-                    case "qmlelem":
-                        item.$children.push(val);
-                        break;
-                    case "qmlmethod":
-                        item.$functions[name] = val;
-                        break;
-                    case "qmlobjdef":
-                        // Create object to item
-                        item[name] = item[name] || {};
-                        item[name][statement[2]] = val;
-                        break;
-                    case "qmlpropdef":
-                        item.$properties[statement[2]] = val;
-                        break;
-                    case "qmldefaultprop":
-                        item.$properties[statement[2]] = val;
-                        item.$defaultProperty = val;
-                        break;
-                    case "qmlsignaldef":
-                        item.$signals.push({ name: name, params: statement[2] });
-                        break;
-                    default:
-                        console.log("Unknown statement", statement);
+                    var statement = statements[i];
+                    var name = statement[1];
+                    var val = walk(statement);
+                    switch (statement[0]) {
+                        case "qmlprop":
+                            item[name] = val;
+                            break;
+                        case "qmlelem":
+                            item.$children.push(val);
+                            break;
+                        case "qmlmethod":
+                            item.$functions[name] = val;
+                            break;
+                        case "qmlobjdef":
+                            // Create object to item
+                            item[name] = item[name] || {};
+                            item[name][statement[2]] = val;
+                            break;
+                        case "qmlpropdef":
+                            item.$properties[statement[2]] = val;
+                            break;
+                        case "qmldefaultprop":
+                            item.$properties[statement[2]] = val;
+                            item.$defaultProperty = val;
+                            break;
+                        case "qmlsignaldef":
+                            item.$signals.push({ name, params: statement[2] });
+                            break;
+                        default:
+                            console.log("Unknown statement", statement);
 
-                }
+                    }
             }
 
             return item;
@@ -1593,7 +1615,7 @@ function convertToEngine(tree) {
                 value: tree[1] };
         },
         "qmlsignaldef": function(name, params) {
-            return { name: name, params: params };
+            return { name, params };
         },
         "qmldefaultprop": function(name, tree, src) {
             return bindout(tree, src);
